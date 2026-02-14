@@ -12,8 +12,7 @@ type Verse = {
 };
 
 async function getVerses(bookId: string, chapterNumber: string) {
-  const base = await getBaseUrl();
-
+  const base = getBaseUrl();
   const url = `${base}/api/verses?bookId=${encodeURIComponent(
     bookId
   )}&chapterNumber=${encodeURIComponent(chapterNumber)}`;
