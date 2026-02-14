@@ -1,6 +1,6 @@
 import Link from "next/link";
 import ChapterClient from "./ChapterClient";
-import { getBaseUrl } from "@/lib/url";
+import { createClient } from "@supabase/supabase-js";
 
 type Verse = {
   id: number;
@@ -11,15 +11,24 @@ type Verse = {
   text_en: string | null;
 };
 
-async function getVerses(bookId: string, chapterNumber: string) {
-  const base = getBaseUrl();
-  const url = `${base}/api/verses?bookId=${encodeURIComponent(
-    bookId
-  )}&chapterNumber=${encodeURIComponent(chapterNumber)}`;
+function supabaseServer() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createClient(url, anon, { auth: { persistSession: false } });
+}
 
-  const res = await fetch(url, { cache: "no-store" });
-  const json = await res.json();
-  return json as { ok: boolean; data: Verse[]; error?: string };
+async function getVerses(bookId: string, chapterNumber: string) {
+  const supabase = supabaseServer();
+
+  const { data, error } = await supabase
+    .from("verses")
+    .select("id, book_id, chapter_number, verse_number, text_zh, text_en")
+    .eq("book_id", Number(bookId))
+    .eq("chapter_number", Number(chapterNumber))
+    .order("verse_number", { ascending: true });
+
+  if (error) return { ok: false as const, data: [] as Verse[], error: error.message };
+  return { ok: true as const, data: (data ?? []) as Verse[] };
 }
 
 export default async function ChapterPage({
@@ -33,14 +42,7 @@ export default async function ChapterPage({
   const verses = versesRes.ok ? versesRes.data : [];
 
   return (
-    <main
-      style={{
-        maxWidth: 860,
-        margin: "24px auto",
-        padding: "0 16px",
-        fontFamily: "system-ui",
-      }}
-    >
+    <main style={{ maxWidth: 860, margin: "24px auto", padding: "0 16px", fontFamily: "system-ui" }}>
       <Link href="/" style={{ display: "inline-block", marginBottom: 16 }}>
         ← 回首頁
       </Link>
@@ -54,14 +56,7 @@ export default async function ChapterPage({
       </div>
 
       {!versesRes.ok && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: 12,
-            border: "1px solid #f0c",
-            borderRadius: 10,
-          }}
-        >
+        <div style={{ marginTop: 16, padding: 12, border: "1px solid #f0c", borderRadius: 10 }}>
           目前抓不到經文：{versesRes.error}
         </div>
       )}
