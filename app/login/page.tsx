@@ -1,99 +1,99 @@
-<div style={{fontSize: 24}}>【NEW PAGE TEST】</div>
-
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
 
-type Book = {
-  id: number;
-  order_index: number;
-  name_zh: string;
-  name_en: string;
-};
-
-type Chapter = {
-  id: number;
-  book_id: number;
-  chapter_number: number;
-};
-
-export default function Home() {
-  const [books, setBooks] = useState<Book[]>([]);
-  const [selectedBookId, setSelectedBookId] = useState<number | null>(null);
-  const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [errorMsg, setErrorMsg] = useState<string>("");
+export default function LoginPage() {
+  const router = useRouter();
+  const [key, setKey] = useState("");
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    const fetchBooks = async () => {
-      const { data, error } = await supabase
-        .from("books")
-        .select("id, order_index, name_zh, name_en")
-        .order("order_index", { ascending: true });
-
-      if (error) setErrorMsg(error.message);
-      else {
-        setBooks(data ?? []);
-        setSelectedBookId((data?.[0]?.id) ?? null); // 預設選第一本
-      }
-    };
-
-    fetchBooks();
+    try {
+      const existing = localStorage.getItem("adminKey") ?? "";
+      if (existing) setKey(existing);
+    } catch {}
   }, []);
 
-  useEffect(() => {
-    if (!selectedBookId) return;
+  function save() {
+    try {
+      localStorage.setItem("adminKey", key.trim());
+      setSaved(true);
+      router.push("/");
+    } catch {
+      alert("存取 localStorage 失敗（可能是瀏覽器限制）");
+    }
+  }
 
-    const fetchChapters = async () => {
-      const { data, error } = await supabase
-        .from("chapters")
-        .select("id, book_id, chapter_number")
-        .eq("book_id", selectedBookId)
-        .order("chapter_number", { ascending: true });
-
-      if (error) setErrorMsg(error.message);
-      else setChapters(data ?? []);
-    };
-
-    fetchChapters();
-  }, [selectedBookId]);
+  function clear() {
+    try {
+      localStorage.removeItem("adminKey");
+      setKey("");
+      setSaved(false);
+      alert("已清除管理 key");
+    } catch {}
+  }
 
   return (
-    <div style={{ padding: 16 }}>
-      <h1>聖經書卷</h1>
+    <main
+      style={{
+        maxWidth: 560,
+        margin: "40px auto",
+        padding: "0 16px",
+        fontFamily: "system-ui",
+      }}
+    >
+      <h1 style={{ marginBottom: 8 }}>管理入口</h1>
+      <div style={{ color: "#666", marginBottom: 16 }}>
+        只有你自己用：輸入管理 key 之後，才會在註釋上看到「刪除」按鈕。
+      </div>
 
-      {errorMsg && (
-        <div style={{ marginBottom: 12 }}>
-          ❌ {errorMsg}
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 24 }}>
-        <div style={{ minWidth: 240 }}>
-          import Link from "next/link";
-
-{/* 章節顯示區 */}
-<div style={{ marginLeft: 20, marginTop: 8 }}>
-  {bookChapters.length === 0 ? (
-    <div style={{ color: "#666" }}>(這卷目前沒有章資料)</div>
-  ) : (
-    bookChapters.map((chapter) => (
-      <Link
-        key={chapter.id}
-        href={`/books/${book.id}/chapters/${chapter.chapter_number}`}
+      <label style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>
+        Admin Key
+      </label>
+      <input
+        value={key}
+        onChange={(e) => setKey(e.target.value)}
+        placeholder="輸入 ADMIN_DELETE_KEY"
         style={{
-          display: "inline-block",
-          padding: "6px 12px",
-          border: "1px solid #ccc",
+          width: "100%",
+          padding: "10px 12px",
           borderRadius: 10,
-          marginRight: 10,
-          textDecoration: "none",
-          color: "#111",
-          background: "#f5f5f5",
+          border: "1px solid #ccc",
+          outline: "none",
         }}
-      >
-        第 {chapter.chapter_number} 章
-      </Link>
-    ))
-  )}
-</div>
+      />
+
+      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+        <button
+          onClick={save}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid #ddd",
+            background: "#111",
+            color: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          儲存並回首頁
+        </button>
+
+        <button
+          onClick={clear}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid #ddd",
+            background: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          清除
+        </button>
+      </div>
+
+      {saved && <div style={{ marginTop: 12, color: "#0a7" }}>已儲存 ✅</div>}
+    </main>
+  );
+}
