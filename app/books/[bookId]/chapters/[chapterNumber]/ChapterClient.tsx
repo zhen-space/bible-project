@@ -17,7 +17,10 @@ type Note = {
   verse_number: number;
   content: string;
   created_at?: string | null;
-  stars?: number | null; // 後端回 stars_count 或 stars 都行（我們取 stars）
+
+  // ✅ 你的 API 回的是這兩個欄位
+  stars_count?: number | null;
+  starred_by_me?: boolean | null;
 };
 
 export default function ChapterClient({
@@ -29,32 +32,27 @@ export default function ChapterClient({
   chapterNumber: string;
   verses: Verse[];
 }) {
+  // 你目前用 userId="me" 測試星號：這裡直接固定成 me（之後再做登入/匿名）
+  const userId = "me";
+
   const [selectedVerse, setSelectedVerse] = useState<number | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [draft, setDraft] = useState("");
+  const [adminKey, setAdminKey] = useState<string>(""); // 只有有管理者 key 才顯示刪除鍵
 
-  // ⭐ 我的 userId（先用 localStorage 固定一個；之後你要改登入再換）
-  const [userId, setUserId] = useState("me");
-
-  // ✅ 管理模式（不要用網址 ?admin=1，改用 localStorage）
-  const [isAdmin, setIsAdmin] = useState(false);
-
+  // 讀管理者 key（你可在 login 頁把它存到 localStorage: adminKey）
   useEffect(() => {
     try {
-      const u = localStorage.getItem("bc_userId");
-      if (!u) localStorage.setItem("bc_userId", "me");
-      setUserId(localStorage.getItem("bc_userId") || "me");
-
-      const adminFlag = localStorage.getItem("bc_isAdmin");
-      setIsAdmin(adminFlag === "1");
+      const k = localStorage.getItem("adminKey") ?? "";
+      setAdminKey(k);
     } catch {}
   }, []);
 
   async function loadNotes() {
     const res = await fetch(
-      `/api/notes?bookId=${bookId}&chapterNumber=${chapterNumber}&userId=${encodeURIComponent(
-        userId
-      )}`,
+      `/api/notes?bookId=${encodeURIComponent(bookId)}&chapterNumber=${encodeURIComponent(
+        chapterNumber
+      )}&userId=${encodeURIComponent(userId)}`,
       { cache: "no-store" }
     );
     const json = await res.json();
@@ -62,12 +60,11 @@ export default function ChapterClient({
   }
 
   useEffect(() => {
-    // userId 要先 ready 才抓
-    if (!userId) return;
     loadNotes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, chapterNumber, userId]);
+  }, [bookId, chapterNumber]);
 
+  // 依 verse 分組 + 排序：星數多的在前，星數相同則新到舊
   const notesMap = useMemo(() => {
     const map = new Map<number, Note[]>();
 
@@ -77,17 +74,17 @@ export default function ChapterClient({
       map.set(n.verse_number, arr);
     }
 
-    // ✅ 每節內：stars 多的在前；同 stars 則新到舊
-    for (const [k, arr] of map.entries()) {
+    for (const [vn, arr] of map.entries()) {
       arr.sort((a, b) => {
-        const sa = Number(a.stars ?? 0);
-        const sb = Number(b.stars ?? 0);
+        const sa = Number(a.stars_count ?? 0);
+        const sb = Number(b.stars_count ?? 0);
         if (sb !== sa) return sb - sa;
-        const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+
+        const ta = a.created_at ? Date.parse(a.created_at) : 0;
+        const tb = b.created_at ? Date.parse(b.created_at) : 0;
         return tb - ta;
       });
-      map.set(k, arr);
+      map.set(vn, arr);
     }
 
     return map;
@@ -103,133 +100,72 @@ export default function ChapterClient({
         bookId: Number(bookId),
         chapterNumber: Number(chapterNumber),
         verseNumber,
-        content: draft,
+        content: draft.trim(),
       }),
     });
 
     const json = await res.json();
     if (json.ok) {
-      setNotes((prev) => [...prev, json.data]);
+      // 新增後你後端回的可能沒有 stars_count / starred_by_me，所以保守補上
+      const row: Note = {
+        ...json.data,
+        stars_count: json.data?.stars_count ?? 0,
+        starred_by_me: json.data?.starred_by_me ?? false,
+      };
+      setNotes((prev) => [...prev, row]);
       setDraft("");
-    } else {
-      alert(json.error ?? "新增失敗");
     }
   }
 
   async function toggleStar(noteId: number) {
     const res = await fetch(`/api/notes/${noteId}/star`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });
+
     const json = await res.json();
     if (!json.ok) {
-      alert(json.error ?? "星號失敗");
+      alert(`點星失敗：${json.error ?? "unknown"}`);
       return;
     }
 
-    // 後端會回：{ starred, stars_count }
     const starred = Boolean(json.starred);
     const starsCount = Number(json.stars_count ?? 0);
 
-    // ✅ 只更新該 note 的 stars（同時靠 useMemo 排序到前面）
     setNotes((prev) =>
       prev.map((n) =>
-        n.id === noteId ? { ...n, stars: starsCount } : n
+        n.id === noteId ? { ...n, starred_by_me: starred, stars_count: starsCount } : n
       )
     );
   }
 
   async function deleteNote(noteId: number) {
-    if (!confirm("確定刪除這則註釋？")) return;
+    if (!adminKey) return;
 
-    const adminKey = (() => {
-      try {
-        return localStorage.getItem("bc_admin_key") || "";
-      } catch {
-        return "";
-      }
-    })();
-
-    if (!adminKey) {
-      alert("你目前不是管理者（缺少 admin key）");
-      return;
-    }
+    const ok = confirm("確定要刪除這則註釋嗎？");
+    if (!ok) return;
 
     const res = await fetch(`/api/notes/${noteId}`, {
       method: "DELETE",
-      headers: { Accept: "application/json", "x-admin-key": adminKey },
+      headers: {
+        Accept: "application/json",
+        "x-admin-key": adminKey,
+      },
     });
 
-    const json = await res.json();
-    if (!json.ok) {
-      alert(`刪除失敗：${json.error ?? "unknown"}`);
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) {
+      alert(`刪除失敗：${json?.error ?? res.statusText}`);
       return;
     }
 
+    // 先前端移除（立刻有感）
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
-  }
-
-  function openAdmin() {
-    const key = prompt("輸入管理者 key（只你知道）：") ?? "";
-    if (!key.trim()) return;
-    try {
-      localStorage.setItem("bc_admin_key", key.trim());
-      localStorage.setItem("bc_isAdmin", "1");
-    } catch {}
-    setIsAdmin(true);
-    alert("✅ 管理模式已開啟（重新整理也會保留）");
-  }
-
-  function closeAdmin() {
-    try {
-      localStorage.removeItem("bc_admin_key");
-      localStorage.setItem("bc_isAdmin", "0");
-    } catch {}
-    setIsAdmin(false);
-    alert("已關閉管理模式");
   }
 
   return (
     <section style={{ marginTop: 24 }}>
-      {/* 管理按鈕（不用再打 ?admin=1） */}
-      <div
-        style={{
-          marginBottom: 12,
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: 8,
-        }}
-      >
-        {isAdmin ? (
-          <button
-            onClick={closeAdmin}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            關閉管理模式
-          </button>
-        ) : (
-          <button
-            onClick={openAdmin}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            開啟管理模式
-          </button>
-        )}
-      </div>
-
       <ol style={{ paddingLeft: 20 }}>
         {verses.map((v) => {
           const verseNotes = notesMap.get(v.verse_number) ?? [];
@@ -248,9 +184,7 @@ export default function ChapterClient({
               >
                 <strong style={{ marginRight: 6 }}>{v.verse_number}.</strong>
                 {v.text_zh}
-                <span style={{ float: "right", color: "#888" }}>
-                  💬 {verseNotes.length}
-                </span>
+                <span style={{ float: "right", color: "#888" }}>💬 {verseNotes.length}</span>
               </div>
 
               {isOpen && (
@@ -264,61 +198,68 @@ export default function ChapterClient({
                   }}
                 >
                   {verseNotes.length === 0 && (
-                    <div style={{ color: "#888", marginBottom: 10 }}>
-                      目前沒有註釋
-                    </div>
+                    <div style={{ color: "#888", marginBottom: 10 }}>目前沒有註釋</div>
                   )}
 
-                  {verseNotes.map((n) => (
-                    <div
-                      key={n.id}
-                      style={{
-                        marginBottom: 10,
-                        padding: 10,
-                        border: "1px solid #eee",
-                        borderRadius: 10,
-                        background: "#fff",
-                      }}
-                    >
-                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        {/* ☆ 空心 / ★ 變黃 */}
-                        <button
-                          onClick={() => toggleStar(n.id)}
-                          title="星號（把喜歡的頂到前面）"
-                          style={{
-                            border: "1px solid #ddd",
-                            background: "#fff",
-                            cursor: "pointer",
-                            borderRadius: 10,
-                            padding: "2px 8px",
-                          }}
-                        >
-                          ☆ <span style={{ color: "#666" }}>{Number(n.stars ?? 0)}</span>
-                        </button>
+                  {verseNotes.map((n) => {
+                    const starred = Boolean(n.starred_by_me);
+                    const count = Number(n.stars_count ?? 0);
 
-                        {isAdmin && (
+                    return (
+                      <div
+                        key={n.id}
+                        style={{
+                          marginBottom: 10,
+                          padding: "10px 10px",
+                          border: "1px solid #e6e6e6",
+                          borderRadius: 10,
+                          background: "#fff",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          {/* ☆ / ★：你要的「空心框」→ ☆；點了變黃 ★ */}
                           <button
-                            onClick={() => deleteNote(n.id)}
-                            title="刪除（只有你）"
+                            onClick={() => toggleStar(n.id)}
+                            title="喜歡（點星）"
                             style={{
-                              border: "1px solid #f2b8b5",
+                              border: "1px solid #ddd",
                               background: "#fff",
-                              cursor: "pointer",
                               borderRadius: 10,
-                              padding: "2px 10px",
-                              color: "#b42318",
+                              padding: "4px 10px",
+                              cursor: "pointer",
+                              fontSize: 16,
+                              lineHeight: "18px",
                             }}
                           >
-                            刪除
+                            <span style={{ color: starred ? "#f4b400" : "#111" }}>
+                              {starred ? "★" : "☆"}
+                            </span>{" "}
+                            <span style={{ color: "#666", fontSize: 13 }}>{count}</span>
                           </button>
-                        )}
-                      </div>
 
-                      <div style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
-                        {n.content}
+                          {/* 內容 */}
+                          <div style={{ flex: 1 }}>{n.content}</div>
+
+                          {/* 刪除（只有你：要有 adminKey 才顯示） */}
+                          {adminKey && (
+                            <button
+                              onClick={() => deleteNote(n.id)}
+                              title="刪除（只有管理者）"
+                              style={{
+                                border: "1px solid #ddd",
+                                background: "#fff",
+                                borderRadius: 10,
+                                padding: "4px 10px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              🗑
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   <textarea
                     value={draft}

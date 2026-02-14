@@ -26,27 +26,9 @@ async function getVerses(bookId: string, chapterNumber: string) {
 export default async function ChapterPage({
   params,
 }: {
-  // ✅ Next 16 / Turbopack：params 可能是 Promise，必須 await
   params: Promise<{ bookId: string; chapterNumber: string }>;
 }) {
   const { bookId, chapterNumber } = await params;
-
-  if (!bookId || !chapterNumber) {
-    return (
-      <main
-        style={{
-          maxWidth: 860,
-          margin: "24px auto",
-          padding: "0 16px",
-          fontFamily: "system-ui",
-        }}
-      >
-        <h1>參數錯誤</h1>
-        <div>bookId: {String(bookId)}</div>
-        <div>chapterNumber: {String(chapterNumber)}</div>
-      </main>
-    );
-  }
 
   const versesRes = await getVerses(bookId, chapterNumber);
   const verses = versesRes.ok ? versesRes.data : [];
