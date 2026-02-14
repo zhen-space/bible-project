@@ -1,17 +1,18 @@
 import { headers } from "next/headers";
 
-/**
- * 取得目前 request 的完整 base URL
- * (for server component / route handler)
- */
 export async function getBaseUrl() {
-  const h = await headers();
+  try {
+    const h = await headers(); // ✅ Next 16 必須 await
 
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host =
-    h.get("x-forwarded-host") ??
-    h.get("host") ??
-    "localhost:3010";
+    const proto =
+      h.get("x-forwarded-proto") ??
+      (process.env.NODE_ENV === "production" ? "https" : "http");
 
-  return `${proto}://${host}`;
+    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3010";
+
+    return `${proto}://${host}`;
+  } catch {
+    // fallback（本機 or 取不到 headers）
+    return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3010";
+  }
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ChapterClient from "./ChapterClient";
+import { getBaseUrl } from "@/lib/url";
 
 type Verse = {
   id: number;
@@ -11,8 +12,7 @@ type Verse = {
 };
 
 async function getVerses(bookId: string, chapterNumber: string) {
-  const base =
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:3010";
+  const base = await getBaseUrl();
 
   const url = `${base}/api/verses?bookId=${encodeURIComponent(
     bookId
@@ -33,7 +33,14 @@ export default async function ChapterPage({
 
   if (!bookId || !chapterNumber) {
     return (
-      <main style={{ maxWidth: 860, margin: "24px auto", padding: "0 16px", fontFamily: "system-ui" }}>
+      <main
+        style={{
+          maxWidth: 860,
+          margin: "24px auto",
+          padding: "0 16px",
+          fontFamily: "system-ui",
+        }}
+      >
         <h1>參數錯誤</h1>
         <div>bookId: {String(bookId)}</div>
         <div>chapterNumber: {String(chapterNumber)}</div>
@@ -45,7 +52,14 @@ export default async function ChapterPage({
   const verses = versesRes.ok ? versesRes.data : [];
 
   return (
-    <main style={{ maxWidth: 860, margin: "24px auto", padding: "0 16px", fontFamily: "system-ui" }}>
+    <main
+      style={{
+        maxWidth: 860,
+        margin: "24px auto",
+        padding: "0 16px",
+        fontFamily: "system-ui",
+      }}
+    >
       <Link href="/" style={{ display: "inline-block", marginBottom: 16 }}>
         ← 回首頁
       </Link>
@@ -59,7 +73,14 @@ export default async function ChapterPage({
       </div>
 
       {!versesRes.ok && (
-        <div style={{ marginTop: 16, padding: 12, border: "1px solid #f0c", borderRadius: 10 }}>
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            border: "1px solid #f0c",
+            borderRadius: 10,
+          }}
+        >
           目前抓不到經文：{versesRes.error}
         </div>
       )}
